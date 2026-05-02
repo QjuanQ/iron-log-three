@@ -279,7 +279,16 @@ function ExCard({ ex, ei, expanded, onToggle, onChange, onSetDone, onSetUndone, 
   const primaryMuscles = Object.entries(MUSCLE_MAP[ex.name]||{}).filter(([,w])=>w>=0.7).map(([m])=>m)
   const cfg = getProgConfig(ex.name, progConfig)
   const status = progStatus[ex.name]
-  const addSet = () => onChange(e => ({...e,sets:[...e.sets,{...EMPTY_SET,load:e.sets[e.sets.length-1]?.load||''}]}))
+  const prevLoad = (()=>{
+    if(!prevEx) return ''
+    const loads=prevEx.sets.filter(s=>s.load).map(s=>parseFloat(s.load)).filter(v=>v>0)
+    if(!loads.length) return ''
+    const freq={}; loads.forEach(v=>{freq[v]=(freq[v]||0)+1})
+    const maxFreq=Math.max(...Object.values(freq))
+    const modes=Object.keys(freq).filter(k=>freq[k]===maxFreq).map(Number)
+    return String(modes.length===1?modes[0]:Math.round(loads.reduce((a,b)=>a+b,0)/loads.length*10)/10)
+  })()
+  const addSet = () => onChange(e => ({...e,sets:[...e.sets,{...EMPTY_SET,load:e.sets[e.sets.length-1]?.load||prevLoad}]}))
   const removeSet = i => onChange(e => ({...e,sets:e.sets.filter((_,j)=>j!==i)}))
   const updateSet = (i,f,v) => onChange(e => { const sets=[...e.sets]; sets[i]={...sets[i],[f]:v}; return{...e,sets} })
   const handlePhoto = ev => { const file=ev.target.files[0]; if(!file)return; const r=new FileReader(); r.onload=e2=>{ const img=new Image(); img.onload=()=>{ const c=document.createElement('canvas'); const sc=Math.min(1,400/img.width); c.width=img.width*sc; c.height=img.height*sc; c.getContext('2d').drawImage(img,0,0,c.width,c.height); onChange(ex=>({...ex,photo:c.toDataURL('image/jpeg',0.6)})) }; img.src=e2.target.result }; r.readAsDataURL(file) }
