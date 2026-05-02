@@ -76,7 +76,9 @@ const sessionWithPrevLoads = (d, prevSess) => {
   return {...base, exercises: base.exercises.map((ex,i)=>{
     const prev = prevSess.exercises[i]
     if(!prev) return ex
-    const loads = prev.sets.filter(s=>s.done&&s.load).map(s=>parseFloat(s.load)).filter(v=>v>0)
+    const doneSets = prev.sets.filter(s=>s.done&&s.load)
+    const sourceSets = doneSets.length ? doneSets : prev.sets.filter(s=>s.load)
+    const loads = sourceSets.map(s=>parseFloat(s.load)).filter(v=>v>0)
     if(!loads.length) return ex
     const freq={}; loads.forEach(v=>{freq[v]=(freq[v]||0)+1})
     const maxFreq=Math.max(...Object.values(freq))
