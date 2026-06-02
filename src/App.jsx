@@ -668,7 +668,7 @@ function PlanView({ plan, progConfig }) {
           <div style={{fontSize:12,letterSpacing:2,color:'#ff8c00',fontWeight:900,marginBottom:10}}>{day.name}</div>
           <div style={{display:'grid',gap:10}}>
             {day.exercises.map((ex,ei)=>{
-              const alias = ex.alias || ex.name
+              const alias = ex.alias || PLAN_EXERCISE_ALIASES[ex.name] || ex.name
               const cfg = getProgConfig(alias, progConfig)
               return (
                 <div key={`${ei}-${ex.name}`} style={{background:'#101010',border:'1px solid #181818',borderRadius:8,padding:'12px'}}>
