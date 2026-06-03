@@ -1,27 +1,26 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { storage } from './db.js'
 import workoutPlan from './workout-plan.json'
 import { VERSION, BUILD_DATE } from './version.js'
 
 /* ═══════════ CONSTANTS ═══════════ */
-const EXERCISES = {
-  0: ['Elevaciones laterales inclinado','Press de banca','Tracción en barra dorsales','Pushdown tríceps','Curl bíceps','Squats','Crunches'],
-  1: ['Press banca inclinado','Remo dorsales','Tríceps dips','Hammer curls','Hack squat','Deadlift','Extensión gemelos'],
-}
+const DAY_NAMES = workoutPlan.days.map(day => day.name)
+const DAY_LABELS = DAY_NAMES.map(name => (name.match(/D[ií]a\s*(\w+)/i)?.[1] || name).toUpperCase())
+const EXERCISES = Object.fromEntries(workoutPlan.days.map((day, idx) => [idx, day.exercises.map(ex => ex.alias || ex.name)]))
 const MUSCLE_MAP = {
   'Elevaciones laterales inclinado':{'Deltoides lateral':1.0,'Deltoides anterior':0.3},
   'Press de banca':{'Pecho':1.0,'Tríceps':0.5,'Deltoides anterior':0.5},
   'Tracción en barra dorsales':{'Dorsal':1.0,'Bíceps':0.5,'Romboides':0.5},
   'Pushdown tríceps':{'Tríceps':1.0},
-  'Curl bíceps':{'Bíceps':1.0},
+  'Curl bíceps':{'Bíceps':1.0,'Braquial':0.7},
   'Squats':{'Cuádriceps':1.0,'Glúteos':0.8,'Isquiotibiales':0.3,'Core':0.3},
   'Crunches':{'Core':1.0},
   'Press banca inclinado':{'Pecho':1.0,'Deltoides anterior':0.7,'Tríceps':0.5},
   'Remo dorsales':{'Dorsal':1.0,'Romboides':0.7,'Bíceps':0.5},
-  'Tríceps dips':{'Tríceps':1.0,'Pecho':0.4},
+  'Tríceps dips':{'Tríceps':1.0,'Pecho':0.4,'Deltoides anterior':0.3},
   'Hammer curls':{'Bíceps':0.8,'Braquial':1.0},
   'Hack squat':{'Cuádriceps':1.0,'Glúteos':0.3},
-  'Deadlift':{'Isquiotibiales':1.0,'Glúteos':0.8,'Dorsal':0.7,'Core':0.5},
+  'Deadlift':{'Isquiotibiales':1.0,'Glúteos':0.8,'Dorsal':0.7,'Core':0.5,'Cuádriceps':0.5},
   'Extensión gemelos':{'Gemelos':1.0},
 }
 const VOLUME_TARGETS = {
@@ -62,21 +61,6 @@ const PROGRESSION_DEFAULTS = {
   'Extensión gemelos':               {setsTarget:5,repsMin:12,repsMax:20,loadIncrement:2.5,rirTarget:2},
   'Crunches':                        {setsTarget:5,repsMin:15,repsMax:25,loadIncrement:0,  rirTarget:2},
 }
-const PLAN_EXERCISE_ALIASES = {
-  'Elevaciones laterales pecho hacia delante': 'Elevaciones laterales inclinado',
-  'Press banca horizontal': 'Press de banca',
-  'Tracciones sobre barra fija para dorsales': 'Tracción en barra dorsales',
-  'Extensión de tríceps por encima de la cabeza': 'Pushdown tríceps',
-  'Curl barra Z / curl inclinado con mancuernas': 'Curl bíceps',
-  'Crunches abdominales': 'Crunches',
-  'Hack squat / prensa': 'Hack squat',
-  'Gemelos con barra en hombros': 'Extensión gemelos',
-  'Pushdown de tríceps / extensión de tríceps por encima de la cabeza': 'Pushdown tríceps',
-  'Crunches reversas': 'Crunches',
-  'Remo con cable para dorsales': 'Remo dorsales',
-  'Dips de tríceps': 'Tríceps dips',
-  'Abdominales laterales': 'Crunches'
-}
 const PROG_DEFAULT = {setsTarget:3,repsMin:8,repsMax:12,loadIncrement:2.5,rirTarget:2}
 const getProgConfig = (name, userConfig) => ({...PROG_DEFAULT,...(PROGRESSION_DEFAULTS[name]||{}),...(userConfig[name]||{})})
 const calc1RM = (load,reps) => { const l=parseFloat(load),r=parseInt(reps); if(!l||!r||r<1)return null; if(r===1)return l; return Math.round(l*(1+r/30)*10)/10 }
@@ -103,7 +87,7 @@ const sessionWithPrevLoads = (d, prevSess) => {
     return {...ex, sets:[{...EMPTY_SET, load:String(load)}]}
   })}
 }
-const calcAllTimeBests = sessions => { const b={}; for(const d of[0,1])for(const s of(sessions[d]||[]))for(const ex of s.exercises){const best=Math.max(...ex.sets.map(s=>calc1RM(s.load,s.reps)||0));if(best>0&&(!b[ex.name]||best>b[ex.name]))b[ex.name]=best;} return b }
+const calcAllTimeBests = sessions => { const b={}; for(const d of[0,1,2])for(const s of(sessions[d]||[]))for(const ex of s.exercises){const best=Math.max(...ex.sets.map(s=>calc1RM(s.load,s.reps)||0));if(best>0&&(!b[ex.name]||best>b[ex.name]))b[ex.name]=best;} return b }
 function evaluateProgression(exerciseList, userProgConfig) {
   const results = {}
   for (const ex of exerciseList) {
@@ -132,7 +116,7 @@ function detectStagnation(sessions, dayIdx, exerciseName) {
 }
 function detectFatigueSignals(sessions, userProgConfig) {
   const signals = []
-  const all = [...(sessions[0]||[]),...(sessions[1]||[])].sort((a,b)=>new Date(b.savedAt||b.date)-new Date(a.savedAt||a.date))
+  const all = [...(sessions[0]||[]),...(sessions[1]||[]),...(sessions[2]||[])].sort((a,b)=>new Date(b.savedAt||b.date)-new Date(a.savedAt||a.date))
   const r2 = all.slice(0,2)
   if (r2.length === 2) {
     const rd = []
@@ -148,9 +132,44 @@ function detectFatigueSignals(sessions, userProgConfig) {
   if (wd.length >= 6) { const avg=wd.slice(1,6).reduce((a,s)=>a+s.duration,0)/5; if(wd[0].duration>avg*1.5) signals.push('Sesión más lenta de lo habitual') }
   return signals
 }
+function attachSessionMetrics(session) {
+  let totalTonnage = 0
+  let totalSets = 0
+  let totalReps = 0
+  let max1RM = 0
+  const exercises = session.exercises.map(ex => {
+    const doneSets = ex.sets.filter(s => s.done && s.load && s.reps)
+    const tonnage = Math.round(doneSets.reduce((acc, s) => acc + (parseFloat(s.load) || 0) * (parseInt(s.reps) || 0), 0) * 10) / 10
+    const maxRM = Math.max(...doneSets.map(s => calc1RM(s.load, s.reps) || 0), 0)
+    const setsDone = doneSets.length
+    const repsDone = doneSets.reduce((acc, s) => acc + (parseInt(s.reps) || 0), 0)
+    totalTonnage += tonnage
+    totalSets += setsDone
+    totalReps += repsDone
+    max1RM = Math.max(max1RM, maxRM)
+    return {
+      ...ex,
+      metrics: {
+        tonnage,
+        max1RM: Math.round(maxRM * 10) / 10,
+        setsDone,
+        repsDone,
+      }
+    }
+  })
+  return {
+    ...session,
+    exercises,
+    totalTonnage: Math.round(totalTonnage * 10) / 10,
+    totalSets,
+    totalReps,
+    max1RM: Math.round(max1RM * 10) / 10,
+  }
+}
+
 function calcWeekVolume(all,wk){
   const muscles={},tonelaje={}
-  for(const d of[0,1])for(const s of(all[d]||[]).filter(s=>getWeekYear(s.date)===wk)){
+  for(const d of[0,1,2])for(const s of(all[d]||[]).filter(s=>getWeekYear(s.date)===wk)){
     for(const ex of s.exercises){const mw=MUSCLE_MAP[ex.name]||{};const done=ex.sets.filter(s=>s.load&&s.reps&&s.done);if(!done.length)continue
     tonelaje[ex.name]=(tonelaje[ex.name]||0)+done.reduce((a,s)=>a+(parseFloat(s.load)||0)*(parseInt(s.reps)||0),0)
     for(const[m,w]of Object.entries(mw))muscles[m]=(muscles[m]||0)+done.length*w}
@@ -173,11 +192,11 @@ const HammerCurlsSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%
 const PushdownSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(68,2,68,24,BL,2,'c1')}{ln(68,24,52,30,BL,2,'c2')}{ci(68,2,3,BL,'none','p')}<StandSide/>{ln(45,22,44,44,G,2.5,'ua')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ln(44,44,52,30,OR,2.5,'fa')}{ln(52,30,56,28,BL,3.5,'bar')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ln(44,44,44,68,OR,2.5,'fb')}{ln(40,68,48,68,BL,3.5,'bar2')}</g></svg>
 const SquatsSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(20,110,72,110,'#333',1.5,'g')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(50,9,6,G,'none','h')}{ln(12,20,78,20,BL,4,'bar')}{ln(12,14,12,26,BL,3,'p1')}{ln(78,14,78,26,BL,3,'p2')}{ln(50,15,50,56,G,2.5,'t')}{ln(34,20,14,20,G,2.5,'arm')}{ln(50,56,46,82,G,2.5,'th')}{ln(46,82,48,110,G,2.5,'sh')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(42,26,6,G,'none','h2')}{ln(10,36,74,36,BL,4,'bar2')}{ln(10,30,10,42,BL,3,'p3')}{ln(74,30,74,42,BL,3,'p4')}{ln(42,32,36,68,G,2.5,'t2')}{ln(28,36,12,36,G,2.5,'arm2')}{ln(36,68,56,82,G,2.5,'th2')}{ln(56,82,50,110,G,2.5,'sh2')}</g></svg>
 const HackSquatSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(60,10,65,110,'#333',6,'mach')}{ln(20,108,70,108,'#333',1.5,'g')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(42,14,6,G,'none','h')}{ln(42,20,52,56,G,2.5,'t')}{ln(52,56,36,80,OR,2.5,'th')}{ln(36,80,40,108,OR,2.5,'sh')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(48,18,6,G,'none','h2')}{ln(48,24,56,58,G,2.5,'t2')}{ln(56,58,50,84,OR,2.5,'th2')}{ln(50,84,54,108,OR,2.5,'sh2')}</g></svg>
-const DeadliftSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(18,110,72,110,'#333',1.5,'g')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(38,22,6,G,'none','h')}{ln(38,28,46,62,G,2.5,'t')}{ln(44,38,44,70,G,2.5,'arm')}{ln(30,70,60,70,BL,4,'bar')}{ln(30,64,30,76,BL,3,'p1')}{ln(60,64,60,76,BL,3,'p2')}{ln(46,62,54,82,G,2.5,'th')}{ln(54,82,50,110,G,2.5,'sh')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(48,8,6,G,'none','h2')}{ln(48,14,48,56,G,2.5,'t2')}{ln(46,26,46,62,G,2.5,'arm2')}{ln(30,62,66,62,BL,4,'bar2')}{ln(30,56,30,68,BL,3,'p3')}{ln(66,56,66,68,BL,3,'p4')}{ln(48,56,44,82,G,2.5,'th2')}{ln(44,82,46,110,G,2.5,'sh2')}</g></svg>
+const DeadliftSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(18,110,72,110,'#333',1.5,'g')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(38,22,6,G,'none','h')}{ln(38,28,24,80,G,2.5,'t')}{ln(24,80,34,110,G,2.5,'ll')}{ln(24,80,46,84,G,2.5,'sh')}{ln(46,84,50,110,G,2.5,'rl')}{ln(30,80,60,80,BL,4,'bar')}{ln(30,74,30,86,BL,3,'p1')}{ln(60,74,60,86,BL,3,'p2')}{ln(38,28,46,52,G,2.5,'arm')}{ln(46,52,50,74,G,2.5,'arm2')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(48,8,6,G,'none','h2')}{ln(48,14,48,56,G,2.5,'t2')}{ln(48,56,40,84,G,2.5,'ll2')}{ln(40,84,46,110,G,2.5,'sh2')}{ln(30,64,66,64,BL,4,'bar2')}{ln(30,58,30,70,BL,3,'p3')}{ln(66,58,66,70,BL,3,'p4')}{ln(48,56,54,82,G,2.5,'arm3')}</g></svg>
 const PressBancaSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(10,74,78,74,G,5,'bench')}{ln(10,74,10,84,G,3,'l1')}{ln(78,74,78,84,G,3,'l2')}{ln(8,84,80,84,'#333',1.5,'g')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(18,62,6,G,'none','h')}{ln(22,65,66,65,G,2.5,'body')}{ln(34,65,34,32,OR,2.5,'ua')}{ln(34,32,38,26,OR,2.5,'fa')}{ln(52,65,52,32,OR,2.5,'ua2')}{ln(52,32,56,26,OR,2.5,'fa2')}{ln(28,24,66,24,BL,4,'bar')}{ln(28,18,28,30,BL,3,'p1')}{ln(66,18,66,30,BL,3,'p2')}{ln(62,67,76,84,G,2.5,'legs')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(18,62,6,G,'none','h2')}{ln(22,65,66,65,G,2.5,'body2')}{ln(34,65,26,60,OR,2.5,'ua3')}{ln(26,60,34,62,OR,2.5,'fa3')}{ln(52,65,60,60,OR,2.5,'ua4')}{ln(60,60,52,62,OR,2.5,'fa4')}{ln(28,62,66,62,BL,4,'bar2')}{ln(28,56,28,68,BL,3,'p3')}{ln(66,56,66,68,BL,3,'p4')}{ln(62,67,76,84,G,2.5,'legs2')}</g></svg>
 const PressBancaInclinadoSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(18,90,52,42,G,5,'back')}{ln(52,42,78,58,G,5,'seat')}{ln(18,90,18,100,G,3,'l1')}{ln(78,58,78,100,G,3,'l2')}{ln(10,100,82,100,'#333',1.5,'g')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(36,38,6,G,'none','h')}{ln(38,44,58,72,G,2.5,'body')}{ln(44,52,30,32,OR,2.5,'ua')}{ln(30,32,32,24,OR,2.5,'fa')}{ln(22,20,48,20,BL,4,'bar')}{ln(22,14,22,26,BL,3,'p1')}{ln(48,14,48,26,BL,3,'p2')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(36,38,6,G,'none','h2')}{ln(38,44,58,72,G,2.5,'body2')}{ln(44,52,32,48,OR,2.5,'ua2')}{ln(32,48,38,42,OR,2.5,'fa2')}{ln(24,40,50,40,BL,4,'bar2')}{ln(24,34,24,46,BL,3,'p3')}{ln(50,34,50,46,BL,3,'p4')}</g></svg>
 const TraccionBarraSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(8,10,82,10,BL,4,'bar')}{ln(8,4,8,20,'#888',3,'s1')}{ln(82,4,82,20,'#888',3,'s2')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(45,24,6,G,'none','h')}{ln(45,30,45,72,G,2.5,'t')}{ln(45,22,24,10,OR,2.5,'la')}{ln(45,22,66,10,OR,2.5,'ra')}{ln(45,72,38,98,G,2.5,'ll')}{ln(38,98,36,118,G,2.5,'ls')}{ln(45,72,52,98,G,2.5,'rl')}{ln(52,98,54,118,G,2.5,'rs')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(45,16,6,G,'none','h2')}{ln(45,22,45,64,G,2.5,'t2')}{ln(45,26,24,10,OR,2.5,'la2')}{ln(45,26,66,10,OR,2.5,'ra2')}{ln(45,64,38,90,G,2.5,'ll2')}{ln(38,90,36,110,G,2.5,'ls2')}{ln(45,64,52,90,G,2.5,'rl2')}{ln(52,90,54,110,G,2.5,'rs2')}</g></svg>
-const RemoDorsalesSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(16,110,74,110,'#333',1.5,'g')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(36,24,6,G,'none','h')}{ln(36,30,50,64,G,2.5,'t')}{ln(42,40,44,66,G,2.5,'arm')}{ln(32,66,60,66,BL,4,'bar')}{ln(32,60,32,72,BL,3,'p1')}{ln(60,60,60,72,BL,3,'p2')}{ln(50,64,56,86,G,2.5,'th')}{ln(56,86,52,110,G,2.5,'sh')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(36,24,6,G,'none','h2')}{ln(36,30,50,64,G,2.5,'t2')}{ln(44,42,60,52,OR,2.5,'ua2')}{ln(60,52,64,48,OR,2.5,'fa2')}{ln(46,52,66,52,BL,4,'bar2')}{ln(46,46,46,58,BL,3,'p3')}{ln(66,46,66,58,BL,3,'p4')}{ln(50,64,56,86,G,2.5,'th2')}{ln(56,86,52,110,G,2.5,'sh2')}</g></svg>
+const RemoDorsalesSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(10,110,80,110,'#333',1.5,'g')}{ln(8,20,8,110,'#333',4,'mach')}{ci(8,65,4,BL,'none','pu')}{ci(68,18,6,G,'none','h')}{ln(68,24,66,68,G,2.5,'tr')}{ln(66,68,42,66,G,2.5,'th')}{ln(42,66,40,110,G,2.5,'sh')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ln(66,34,38,50,OR,2.5,'ua')}{ln(38,50,10,62,OR,2.5,'fa')}{ln(8,65,12,62,BL,3.5,'hnd')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ln(66,34,58,38,OR,2.5,'ua2')}{ln(58,38,54,50,OR,2.5,'fa2')}{ln(52,48,56,52,BL,3.5,'hnd2')}</g></svg>
 const TricepsDipsSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(20,32,40,32,BL,4,'lb')}{ln(20,22,20,42,'#888',3,'ls')}{ln(40,22,40,42,'#888',3,'rs')}{ln(50,32,70,32,BL,4,'rb')}{ln(50,22,50,42,'#888',3,'ls2')}{ln(70,22,70,42,'#888',3,'rs2')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(45,14,6,G,'none','h')}{ln(45,20,45,60,G,2.5,'t')}{ln(45,26,26,32,G,2.5,'la')}{ln(45,26,64,32,G,2.5,'ra')}{ln(45,60,40,86,G,2.5,'ll')}{ln(40,86,38,108,G,2.5,'ls3')}{ln(45,60,50,86,G,2.5,'rl')}{ln(50,86,52,108,G,2.5,'rs3')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(45,28,6,G,'none','h2')}{ln(45,34,45,74,G,2.5,'t2')}{ln(45,40,26,32,OR,2.5,'la2')}{ln(45,40,64,32,OR,2.5,'ra2')}{ln(45,74,40,98,G,2.5,'ll2')}{ln(40,98,38,118,G,2.5,'ls4')}{ln(45,74,50,98,G,2.5,'rl2')}{ln(50,98,52,118,G,2.5,'rs4')}</g></svg>
 const ElevLateralesSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(20,110,72,110,'#333',1.5,'g')}{ci(32,22,6,G,'none','h')}{ln(32,28,52,62,G,2.5,'t')}{ln(36,34,52,62,G,2.5,'la')}{ln(52,62,52,88,G,2.5,'th')}{ln(52,88,50,110,G,2.5,'sh')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ln(36,34,30,56,OR,2.5,'fa')}{ci(27,58,4,'none',BL,'d1')}{ln(22,58,32,58,BL,3,'db')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ln(36,34,16,28,OR,2.5,'fb')}{ci(13,26,4,'none',BL,'d2')}{ln(8,26,18,26,BL,3,'db2')}</g></svg>
 const CrunchesSVG = () => <svg viewBox="0 0 90 118" width="100%" height="100%">{ln(8,82,82,82,'#333',1.5,'g')}<g style={{animation:'pa 3s ease-in-out infinite'}}>{ci(14,74,6,G,'none','h')}{ln(20,78,68,78,G,2.5,'body')}{ln(68,78,72,74,G,2.5,'kn')}{ln(72,74,68,82,G,2.5,'sh')}{ln(10,72,22,70,G,2,'arm')}</g><g style={{animation:'pb 3s ease-in-out infinite',opacity:0}}>{ci(22,58,6,G,'none','h2')}{ln(28,62,58,74,OR,2.5,'body2')}{ln(58,74,66,70,G,2.5,'kn2')}{ln(66,70,64,78,G,2.5,'sh2')}{ln(14,62,26,56,G,2,'arm2')}</g></svg>
@@ -387,7 +406,7 @@ function ExCard({ ex, ei, expanded, onToggle, onChange, onSetDone, onSetUndone, 
           <textarea value={ex.notes} rows={2} onChange={e=>onChange(ex=>({...ex,notes:e.target.value}))} placeholder="Técnica, sensaciones..." style={{width:'100%',background:'#090909',border:'1.5px solid #1c1c1c',borderRadius:6,color:'#aaa',padding:'8px 10px',fontSize:12,outline:'none',resize:'none',lineHeight:1.5,marginTop:10,boxSizing:'border-box',fontFamily:'inherit'}}/>
           <div style={{marginTop:8}}>
             <label style={{display:'flex',alignItems:'center',gap:8,background:'#090909',border:'1.5px dashed #2a2a2a',borderRadius:6,padding:'9px 12px',cursor:'pointer',fontSize:11,color:'#666'}}>
-              📷 {ex.photo?'Cambiar foto':'Añadir foto de técnica'}
+              📷 {ex.photo?'Cambiar foto':'Añadir foto (solo esta sesión)'}
               <input type="file" accept="image/*" onChange={handlePhoto} style={{display:'none'}}/>
             </label>
             {ex.photo&&(<div style={{position:'relative',marginTop:6}}><img src={ex.photo} alt="técnica" style={{width:'100%',borderRadius:6,border:'1px solid #1e1e1e',objectFit:'cover',maxHeight:220}}/><button onClick={()=>onChange(ex=>({...ex,photo:null}))} style={{position:'absolute',top:6,right:6,background:'rgba(0,0,0,0.75)',color:'#fff',border:'none',borderRadius:'50%',width:26,height:26,fontSize:13,cursor:'pointer'}}>✕</button></div>)}
@@ -558,6 +577,22 @@ function MesoSetup({ current, onSave, onClose }) {
   )
 }
 
+/* ═══════════ CONFIRM MODAL ═══════════ */
+function ConfirmModal({ message, sub, onConfirm, onCancel, danger=false, confirmLabel='CONFIRMAR' }) {
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.88)',zIndex:500,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={onCancel}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'#111',border:'1px solid #2a2a2a',borderRadius:'16px 16px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:480}}>
+        <div style={{fontSize:14,fontWeight:800,color:'#f0ece3',marginBottom:sub?8:24,lineHeight:1.5}}>{message}</div>
+        {sub&&<div style={{fontSize:12,color:'#777',marginBottom:24,lineHeight:1.5}}>{sub}</div>}
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={onCancel} style={{flex:1,padding:'14px',background:'transparent',color:'#555',border:'1.5px solid #2a2a2a',borderRadius:8,fontSize:14,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}>CANCELAR</button>
+          <button onClick={onConfirm} style={{flex:2,padding:'14px',background:danger?'linear-gradient(135deg,#cc2200,#991a00)':'linear-gradient(135deg,#ff8c00,#e06600)',color:'#f0ece3',border:'none',borderRadius:8,fontSize:14,fontWeight:900,cursor:'pointer',fontFamily:'inherit',letterSpacing:1}}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ═══════════ VOLUME VIEW ═══════════ */
 function VolumeView({ sessions }) {
   const [weekOffset, setWeekOffset] = useState(0)
@@ -668,17 +703,22 @@ function PlanView({ plan, progConfig }) {
           <div style={{fontSize:12,letterSpacing:2,color:'#ff8c00',fontWeight:900,marginBottom:10}}>{day.name}</div>
           <div style={{display:'grid',gap:10}}>
             {day.exercises.map((ex,ei)=>{
-              const alias = ex.alias || PLAN_EXERCISE_ALIASES[ex.name] || ex.name
-              const cfg = getProgConfig(alias, progConfig)
+              const canonicalName = ex.alias || ex.name
+              const cfg = getProgConfig(canonicalName, progConfig)
               return (
                 <div key={`${ei}-${ex.name}`} style={{background:'#101010',border:'1px solid #181818',borderRadius:8,padding:'12px'}}>
-                  <div style={{fontSize:13,fontWeight:900,color:'#f0ece3',marginBottom:6}}>{ex.name}</div>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,flexWrap:'wrap'}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:900,color:'#f0ece3',marginBottom:4}}>{ex.name}</div>
+                      {ex.alias && ex.alias !== ex.name && <div style={{fontSize:10,color:'#777'}}>Alias corto: {ex.alias}</div>}
+                    </div>
+                    <div style={{fontSize:10,color:'#ff8c00',fontWeight:800,letterSpacing:1,background:'#110900',border:'1px solid #331900',borderRadius:6,padding:'6px 8px'}}>DÍA {day.name.replace(/Día\s*/i, '').toUpperCase()}</div>
+                  </div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',marginTop:10}}>
                     <div style={{fontSize:11,color:'#aaa',background:'#111',border:'1px solid #222',borderRadius:5,padding:'6px 8px'}}>Series: {cfg.setsTarget}</div>
                     <div style={{fontSize:11,color:'#aaa',background:'#111',border:'1px solid #222',borderRadius:5,padding:'6px 8px'}}>Reps: {cfg.repsMin}-{cfg.repsMax}</div>
                     <div style={{fontSize:11,color:'#aaa',background:'#111',border:'1px solid #222',borderRadius:5,padding:'6px 8px'}}>RIR≥{cfg.rirTarget}</div>
                   </div>
-                  {alias !== ex.name && <div style={{fontSize:10,color:'#777',marginTop:6}}>Equivalente: {alias}</div>}
                 </div>
               )
             })}
@@ -720,7 +760,7 @@ function ProgressView({ allTimeBests, allSessions }) {
   const trendColor = trendV===null?'#333':trendV>0?'#4caf50':trendV<0?'#ff4444':'#ffd12d'
 
   // Global stats — all exercises both days
-  const globalStats = [0,1].flatMap(d=>EXERCISES[d].map((name,ei)=>{
+  const globalStats = [0,1,2].flatMap(d=>EXERCISES[d].map((name,ei)=>{
     const data=buildChartData(allSessions[d]||[],ei)
     if(!data.length)return{name,d,noData:true}
     const f=data[0],l=data[data.length-1]
@@ -736,7 +776,7 @@ function ProgressView({ allTimeBests, allSessions }) {
     <div style={{padding:12}}>
       {/* DAY SELECTOR */}
       <div style={{display:'flex',gap:5,marginBottom:10}}>
-        {['DÍA A','DÍA B'].map((label,i)=>(
+        {DAY_NAMES.map((label,i)=>(
           <button key={i} onClick={()=>{setViewDay(i);setSel(0)}} style={{flex:1,padding:'9px 8px',background:viewDay===i?'#161616':'transparent',border:`2px solid ${viewDay===i?'#ff8c00':'#1e1e1e'}`,borderRadius:6,color:viewDay===i?'#ff8c00':'#555',fontSize:13,fontWeight:900,letterSpacing:3,cursor:'pointer',fontFamily:'inherit'}}>
             {label}
           </button>
@@ -759,9 +799,9 @@ function ProgressView({ allTimeBests, allSessions }) {
         /* GLOBAL VIEW */
         <div>
           <div style={{fontSize:9,color:'#666',letterSpacing:3,fontWeight:800,marginBottom:10}}>TODOS LOS EJERCICIOS — {range==='1m'?'1 MES':range==='3m'?'3 MESES':'6 MESES'} — {metric==='1rm'?'1RM EST.':'TONELAJE'}</div>
-          {[0,1].map(d=>(
+          {[0,1,2].map(d=>(
             <div key={d} style={{marginBottom:16}}>
-              <div style={{fontSize:9,color:'#ff8c00',letterSpacing:3,fontWeight:900,marginBottom:6}}>DÍA {d===0?'A':'B'}</div>
+              <div style={{fontSize:9,color:'#ff8c00',letterSpacing:3,fontWeight:900,marginBottom:6}}>DÍA {DAY_LABELS[d]}</div>
               {globalStats.filter(g=>g.d===d).map((g,i)=>{
                 if(g.noData)return(<div key={i} style={{display:'flex',justifyContent:'space-between',padding:'7px 0',borderTop:'1px solid #111',alignItems:'center'}}>
                   <div style={{fontSize:11,color:'#666',flex:1}}>{g.name}</div>
@@ -871,6 +911,7 @@ function BodyView({ measurements, onSave, onDelete }) {
   const [sel, setSel] = useState('biceps')
   const [form, setForm] = useState({})
   const [formDate, setFormDate] = useState(localDateStr())
+  const [confirmDel, setConfirmDel] = useState(null)
 
   const sorted = [...measurements].sort((a,b)=>a.date.localeCompare(b.date))
   const muscle = BODY_MUSCLES.find(m=>m.key===sel)
@@ -1002,7 +1043,7 @@ function BodyView({ measurements, onSave, onDelete }) {
               <div style={{fontSize:12,fontWeight:800,color:'#ff8c00'}}>
                 {parseLocalDate(entry.date).toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}
               </div>
-              <button onClick={()=>{if(window.confirm('¿Borrar esta medición?'))onDelete(origIdx)}} style={{background:'transparent',border:'none',color:'#555',fontSize:14,cursor:'pointer',padding:'0 2px'}}>🗑</button>
+              <button onClick={()=>setConfirmDel(origIdx)} style={{background:'transparent',border:'none',color:'#555',fontSize:14,cursor:'pointer',padding:'0 2px'}}>🗑</button>
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:5}}>
               {BODY_MUSCLES.map(m=>{
@@ -1033,6 +1074,8 @@ function BodyView({ measurements, onSave, onDelete }) {
           </div>
         )
       })}
+
+      {confirmDel!=null&&<ConfirmModal message="¿Borrar esta medición?" danger confirmLabel="BORRAR" onConfirm={()=>{onDelete(confirmDel);setConfirmDel(null)}} onCancel={()=>setConfirmDel(null)}/>}
 
       {/* FORM MODAL */}
       {showForm&&(
@@ -1079,8 +1122,8 @@ function BodyView({ measurements, onSave, onDelete }) {
 export default function App() {
   const [activeDay,setActiveDay] = useState(0)
   const [view,setView] = useState('log')
-  const [sessions,setSessions] = useState({0:[],1:[]})
-  const [current,setCurrent] = useState({0:defaultSession(0),1:defaultSession(1)})
+  const [sessions,setSessions] = useState({0:[],1:[],2:[]})
+  const [current,setCurrent] = useState({0:defaultSession(0),1:defaultSession(1),2:defaultSession(2)})
   const [expandedEx,setExpandedEx] = useState(0)
   const [saved,setSaved] = useState(false)
   const [loaded,setLoaded] = useState(false)
@@ -1109,6 +1152,8 @@ export default function App() {
   const [historyMonth,setHistoryMonth] = useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`})
   const [measurements,setMeasurements] = useState([])
   const [histExpanded,setHistExpanded] = useState({})
+  const [confirmModal,setConfirmModal] = useState(null)
+  const [toastMsg,setToastMsg] = useState(null)
   const sessRef=useRef(null), restRef=useRef(null)
   const timerStateRef=useRef({started:false,elapsed:0,paused:false,dayIdx:0})
   const restStateRef=useRef({restTime:0,restRunning:false})
@@ -1148,9 +1193,9 @@ export default function App() {
   useEffect(()=>{
     (async()=>{
       let parsedSess=null, loadedProgConfig={}
-      const s=await storage.get('sess');if(s){parsedSess=JSON.parse(s.value);setSessions(parsedSess);setAllTimeBests(calcAllTimeBests(parsedSess));}
+      const s=await storage.get('sess');if(s){parsedSess=JSON.parse(s.value);parsedSess={0:parsedSess[0]||[],1:parsedSess[1]||[],2:parsedSess[2]||[]};for(const d of[0,1,2])parsedSess[d]=parsedSess[d].map(attachSessionMetrics);setSessions(parsedSess);setAllTimeBests(calcAllTimeBests(parsedSess));}
       const c=await storage.get('curr')
-      if(c){const loadedCurr=JSON.parse(c.value);for(const d of[0,1]){const isEmpty=!loadedCurr[d]?.exercises?.some(ex=>ex.sets?.some(s=>s.load||s.reps||s.done));if(isEmpty&&parsedSess?.[d]?.length)loadedCurr[d]=sessionWithPrevLoads(d,parsedSess[d][0])};setCurrent(loadedCurr)}
+      if(c){const loadedCurr=JSON.parse(c.value);for(const d of[0,1,2]){const isEmpty=!loadedCurr[d]?.exercises?.some(ex=>ex.sets?.some(s=>s.load||s.reps||s.done));if(isEmpty&&parsedSess?.[d]?.length)loadedCurr[d]=sessionWithPrevLoads(d,parsedSess[d][0])};setCurrent({...{0:defaultSession(0),1:defaultSession(1),2:defaultSession(2)},...loadedCurr})}
       const m=await storage.get('meso');if(m)setMesocycle(JSON.parse(m.value))
       const ar=await storage.get('autorest');if(ar)setAutoRest(JSON.parse(ar.value))
       const rd=await storage.get('rest_duration');if(rd)setRestDuration(JSON.parse(rd.value))
@@ -1165,10 +1210,28 @@ export default function App() {
     })()
   },[])
 
+  const showConfirm = opts => setConfirmModal(opts)
+  const hideConfirm = () => setConfirmModal(null)
+  const showToast = msg => { setToastMsg(msg); setTimeout(()=>setToastMsg(null),2500) }
+
+  const sessionPRMap = useMemo(()=>{
+    const flat=[0,1,2].flatMap(d=>(sessions[d]||[]).map((s,i)=>({s,d,i}))).sort((a,b)=>a.s.date.localeCompare(b.s.date)||(a.s.savedAt||'').localeCompare(b.s.savedAt||''))
+    const running={}, map=new Map()
+    for(const{s,d,i}of flat){
+      const prSet=new Set()
+      for(const ex of s.exercises){
+        const best=Math.max(...ex.sets.filter(st=>st.load&&st.reps).map(st=>calc1RM(st.load,st.reps)||0),0)
+        if(best>0&&(!running[ex.name]||best>=running[ex.name])){running[ex.name]=best;prSet.add(ex.name)}
+      }
+      map.set(`${d}-${i}`,prSet)
+    }
+    return map
+  },[sessions])
+
   const persist = useCallback(async(ns,nc)=>{
     await storage.set('sess',JSON.stringify(ns))
     const clean={}
-    for(const d of[0,1])clean[d]={...nc[d],exercises:nc[d].exercises.map(ex=>({...ex,photo:null}))}
+    for(const d of[0,1,2])clean[d]={...nc[d],exercises:nc[d].exercises.map(ex=>({...ex,photo:null}))}
     await storage.set('curr',JSON.stringify(clean))
   },[])
 
@@ -1207,7 +1270,7 @@ export default function App() {
 
   const openSaveConfirm = () => { setPendingSaveDate(localDateStr()); setShowSaveConfirm(true) }
   const saveSession = (date=localDateStr()) => {
-    const s={...current[activeDay],date,savedAt:new Date().toISOString(),duration:sessionElapsed,exercises:current[activeDay].exercises.map(ex=>({...ex,photo:null}))}
+    const s=attachSessionMetrics({...current[activeDay],date,savedAt:new Date().toISOString(),duration:sessionElapsed,exercises:current[activeDay].exercises.map(ex=>({...ex,photo:null}))})
     const ns={...sessions,[activeDay]:[s,...(sessions[activeDay]||[])]}
     const nc={...current,[activeDay]:sessionWithPrevLoads(activeDay,s)}
     setSessions(ns);setCurrent(nc);setSessionStarted(false);setSessionPaused(false);setSessionElapsed(0)
@@ -1239,22 +1302,29 @@ export default function App() {
 
   const handleRestore = async e => {
     const file = e.target.files[0]; if(!file)return
-    if(!window.confirm('¿Restaurar backup? Se sobreescribirán todos los datos actuales.'))return
-    try {
-      const data = JSON.parse(await file.text())
-      if(data.sess){await storage.set('sess',data.sess);const p=JSON.parse(data.sess);setSessions(p);setAllTimeBests(calcAllTimeBests(p))}
-      if(data.curr){await storage.set('curr',data.curr);setCurrent(JSON.parse(data.curr))}
-      if(data.meso){await storage.set('meso',data.meso);setMesocycle(JSON.parse(data.meso))}
-      if(data.autorest!=null){await storage.set('autorest',data.autorest);setAutoRest(JSON.parse(data.autorest))}
-      if(data.rest_duration!=null){await storage.set('rest_duration',data.rest_duration);setRestDuration(JSON.parse(data.rest_duration))}
-      if(data.progression_config){await storage.set('progression_config',data.progression_config);setProgConfig(JSON.parse(data.progression_config))}
-      if(data.progression_status){await storage.set('progression_status',data.progression_status);setProgStatus(JSON.parse(data.progression_status))}
-      if(data.deload_dismissed_week!=null){await storage.set('deload_dismissed_week',data.deload_dismissed_week);setDeloadDismissedWeek(JSON.parse(data.deload_dismissed_week))}
-      if(data.measurements){await storage.set('measurements',data.measurements);setMeasurements(JSON.parse(data.measurements))}
-      alert('✓ Backup restaurado')
-    } catch {
-      alert('Error al leer el archivo')
-    }
+    let data
+    try { data=JSON.parse(await file.text()) } catch { showToast('Error al leer el archivo'); e.target.value=''; return }
+    showConfirm({
+      message:'¿Restaurar backup?',
+      sub:'Se sobreescribirán todos los datos actuales.',
+      danger:true,
+      confirmLabel:'RESTAURAR',
+      onConfirm:async()=>{
+        hideConfirm()
+        try {
+          if(data.sess){await storage.set('sess',data.sess);const p=JSON.parse(data.sess);setSessions(p);setAllTimeBests(calcAllTimeBests(p))}
+          if(data.curr){await storage.set('curr',data.curr);setCurrent(JSON.parse(data.curr))}
+          if(data.meso){await storage.set('meso',data.meso);setMesocycle(JSON.parse(data.meso))}
+          if(data.autorest!=null){await storage.set('autorest',data.autorest);setAutoRest(JSON.parse(data.autorest))}
+          if(data.rest_duration!=null){await storage.set('rest_duration',data.rest_duration);setRestDuration(JSON.parse(data.rest_duration))}
+          if(data.progression_config){await storage.set('progression_config',data.progression_config);setProgConfig(JSON.parse(data.progression_config))}
+          if(data.progression_status){await storage.set('progression_status',data.progression_status);setProgStatus(JSON.parse(data.progression_status))}
+          if(data.deload_dismissed_week!=null){await storage.set('deload_dismissed_week',data.deload_dismissed_week);setDeloadDismissedWeek(JSON.parse(data.deload_dismissed_week))}
+          if(data.measurements){await storage.set('measurements',data.measurements);setMeasurements(JSON.parse(data.measurements))}
+          showToast('✓ Backup restaurado')
+        } catch { showToast('Error al restaurar el backup') }
+      }
+    })
     e.target.value=''
   }
 
@@ -1302,7 +1372,7 @@ export default function App() {
                 <span style={{fontSize:13,fontWeight:800,letterSpacing:1,color:sessionPaused?'#ffaa2d':'#f0ece3'}}>{fmt(sessionElapsed)}</span>
                 <button onClick={()=>{const np=!sessionPaused;setSessionPaused(np);storage.set('session_state',JSON.stringify({started:true,elapsed:sessionElapsed,paused:np,dayIdx:activeDay,savedAt:new Date().toISOString()}))}} style={{background:'transparent',border:'none',color:'#ff8c00',fontSize:13,cursor:'pointer',padding:'0 2px'}}>{sessionPaused?'▶':'⏸'}</button>
                 <button onClick={openSaveConfirm} style={{background:'transparent',border:'none',color:'#4caf50',fontSize:11,cursor:'pointer',padding:'0 2px',fontWeight:900}}>■</button>
-                <button onClick={()=>{if(window.confirm('¿Descartar sesión?')){setCurrent(c=>({...c,[activeDay]:sessionWithPrevLoads(activeDay,sessions[activeDay]?.[0])}));setSessionStarted(false);setSessionPaused(false);setSessionElapsed(0);storage.set('session_state',JSON.stringify({started:false}))}}} style={{background:'transparent',border:'none',color:'#666',fontSize:13,cursor:'pointer',padding:'0 2px'}}>✕</button>
+                <button onClick={()=>showConfirm({message:'¿Descartar sesión?',sub:'Se perderán todos los datos de la sesión en curso.',danger:true,confirmLabel:'DESCARTAR',onConfirm:()=>{setCurrent(c=>({...c,[activeDay]:sessionWithPrevLoads(activeDay,sessions[activeDay]?.[0])}));setSessionStarted(false);setSessionPaused(false);setSessionElapsed(0);storage.set('session_state',JSON.stringify({started:false}));hideConfirm()}})} style={{background:'transparent',border:'none',color:'#666',fontSize:13,cursor:'pointer',padding:'0 2px'}}>✕</button>
               </div>
             ):(
               <button onClick={()=>{setSessionStarted(true);setSessionElapsed(0);storage.set('session_state',JSON.stringify({started:true,elapsed:0,paused:false,dayIdx:activeDay,savedAt:new Date().toISOString()}))}} style={{background:'#1a0e00',border:'1.5px solid #ff8c00',borderRadius:20,padding:'4px 12px',color:'#ff8c00',fontSize:11,fontWeight:900,cursor:'pointer',letterSpacing:1,fontFamily:'inherit'}}>▶ INICIAR</button>
@@ -1310,7 +1380,7 @@ export default function App() {
           </div>
         </div>
         <div style={{display:'flex',gap:5}}>
-          {[['log','📋 SESIÓN'],['volume','📊 VOLUMEN'],['plan','📅 PLAN'],['progress','📈 PROGRESO'],['body','📏 MEDIDAS'],['history','🗂 HISTORIAL']].map(([v,l])=>(
+          {[['log','📋 SESIÓN'],['plan','📅 PLAN'],['volume','📊 VOLUMEN'],['progress','📈 PROGRESO'],['body','📏 MEDIDAS'],['history','🗂 HISTORIAL']].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{flex:1,padding:'8px 2px',background:view===v?'#ff8c00':'transparent',color:view===v?'#080808':'#555',border:`1.5px solid ${view===v?'#ff8c00':'#222'}`,borderRadius:5,fontSize:9,fontWeight:800,letterSpacing:0.5,cursor:'pointer',fontFamily:'inherit'}}>{l}</button>
           ))}
         </div>
@@ -1341,9 +1411,9 @@ export default function App() {
 
       {/* DAY TABS — solo en log */}
       {view==='log'&&<div style={{display:'flex',margin:'8px 12px 0',gap:8}}>
-        {['DÍA A','DÍA B'].map((d,i)=>(
+        {DAY_NAMES.map((label,i)=>(
           <button key={i} onClick={()=>{setActiveDay(i);setExpandedEx(0)}} style={{flex:1,padding:'11px 8px',background:activeDay===i?'#161616':'transparent',border:`2px solid ${activeDay===i?'#ff8c00':'#1e1e1e'}`,borderRadius:6,color:activeDay===i?'#ff8c00':'#555',fontSize:15,fontWeight:900,letterSpacing:3,cursor:'pointer',fontFamily:'inherit',position:'relative'}}>
-            {d}
+            {label}
             {(sessions[i]||[]).length>0&&<span style={{position:'absolute',top:4,right:6,background:'#ff8c00',color:'#080808',borderRadius:10,fontSize:9,fontWeight:900,padding:'1px 5px'}}>{(sessions[i]||[]).length}</span>}
           </button>
         ))}
@@ -1430,7 +1500,7 @@ export default function App() {
           {sessionStarted&&(
             <div style={{background:'#0d0900',border:'1.5px solid #ff8c00',borderRadius:8,padding:'12px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:12}}>
               <div style={{flex:1}}>
-                <div style={{fontSize:9,fontWeight:900,color:'#ff8c00',letterSpacing:3}}>SESIÓN EN CURSO — DÍA {activeDay===0?'A':'B'}</div>
+                <div style={{fontSize:9,fontWeight:900,color:'#ff8c00',letterSpacing:3}}>SESIÓN EN CURSO — DÍA {DAY_LABELS[activeDay] || 'A'}</div>
                 <div style={{fontSize:26,fontWeight:900,color:'#f0ece3',lineHeight:1.2,marginTop:3}}>{fmt(sessionElapsed)}</div>
                 <div style={{fontSize:10,color:'#555',marginTop:2}}>{current[activeDay].exercises.reduce((a,ex)=>a+ex.sets.filter(s=>s.done).length,0)} series completadas</div>
               </div>
@@ -1451,7 +1521,8 @@ export default function App() {
             const monthLabel=m=>{const[y,mo]=m.split('-');return new Date(parseInt(y),parseInt(mo)-1,1).toLocaleDateString('es-ES',{month:'long',year:'numeric'}).toUpperCase()}
             const allCombined=[
               ...(sessions[0]||[]).map((s,i)=>({...s,_day:0,_idx:i})),
-              ...(sessions[1]||[]).map((s,i)=>({...s,_day:1,_idx:i}))
+              ...(sessions[1]||[]).map((s,i)=>({...s,_day:1,_idx:i})),
+              ...(sessions[2]||[]).map((s,i)=>({...s,_day:2,_idx:i}))
             ].sort((a,b)=>b.date.localeCompare(a.date)||(b.savedAt||'').localeCompare(a.savedAt||''))
             const filtered=allCombined.filter(s=>s.date&&s.date.startsWith(historyMonth))
             return(<>
@@ -1472,19 +1543,25 @@ export default function App() {
                     <div key={si} style={{background:'#0e0e0e',border:'1px solid #1a1a1a',borderRadius:8,marginBottom:10,overflow:'hidden'}}>
                       <div onClick={()=>setHistExpanded(p=>({...p,[hkey]:!p[hkey]}))} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:12,cursor:'pointer'}}>
                         <div style={{display:'flex',alignItems:'center',gap:8}}>
-                          <span style={{fontSize:10,fontWeight:900,color:'#080808',background:'#ff8c00',borderRadius:3,padding:'1px 6px',letterSpacing:1,flexShrink:0}}>DÍA {s._day===0?'A':'B'}</span>
+                          <span style={{fontSize:10,fontWeight:900,color:'#080808',background:'#ff8c00',borderRadius:3,padding:'1px 6px',letterSpacing:1,flexShrink:0}}>DÍA {DAY_LABELS[s._day] || 'A'}</span>
                           <div style={{fontSize:13,fontWeight:800,color:'#f0ece3'}}>{parseLocalDate(s.date).toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'short'}).toUpperCase()}</div>
                         </div>
                         <div style={{display:'flex',gap:8,alignItems:'center'}}>
                           {s.duration&&<span style={{fontSize:10,color:'#666'}}>⏱ {fmt(s.duration)}</span>}
-                          <button onClick={e=>{e.stopPropagation();if(window.confirm('¿Borrar esta sesión?')){const ns={...sessions,[s._day]:sessions[s._day].filter((_,i)=>i!==s._idx)};setSessions(ns);setAllTimeBests(calcAllTimeBests(ns));storage.set('sess',JSON.stringify(ns))}}} style={{background:'transparent',border:'none',color:'#555',fontSize:14,cursor:'pointer',padding:'0 2px',lineHeight:1}}>🗑</button>
+                          <button onClick={e=>{e.stopPropagation();showConfirm({message:'¿Borrar esta sesión?',danger:true,confirmLabel:'BORRAR',onConfirm:()=>{const ns={...sessions,[s._day]:sessions[s._day].filter((_,i)=>i!==s._idx)};setSessions(ns);setAllTimeBests(calcAllTimeBests(ns));storage.set('sess',JSON.stringify(ns));setHistExpanded({});hideConfirm()}})}} style={{background:'transparent',border:'none',color:'#555',fontSize:14,cursor:'pointer',padding:'0 2px',lineHeight:1}}>🗑</button>
                           <span style={{fontSize:12,color:'#555',lineHeight:1}}>{expanded?'▲':'▼'}</span>
                         </div>
+                      </div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:8,padding:'0 12px 10px 12px',fontSize:10,color:'#aaa'}}>
+                        <span>🏋️ {Math.round(s.totalTonnage || (s.metrics?.totalTonnage ?? 0))} kg</span>
+                        <span>• {s.totalSets || (s.metrics?.totalSets ?? 0)} series</span>
+                        <span>• {s.totalReps || (s.metrics?.totalReps ?? 0)} reps</span>
+                        {(()=>{const prSet=sessionPRMap.get(`${s._day}-${s._idx}`);const prs=prSet?prSet.size:0;return prs>0?<span style={{color:'#ffd12d'}}>🏆 {prs} PR{prs>1?'s':''}</span>:null})()}
                       </div>
                       {expanded&&s.exercises.map((ex,ei)=>{
                         const done=ex.sets.filter(st=>st.load&&st.reps);if(!done.length)return null
                         const best=Math.max(...done.map(st=>calc1RM(st.load,st.reps)||0))
-                        const isPR=allTimeBests[ex.name]&&best>=allTimeBests[ex.name]&&best>0
+                        const isPR=best>0&&(sessionPRMap.get(`${s._day}-${s._idx}`)?.has(ex.name)??false)
                         return(<div key={ei} style={{borderTop:'1px solid #161616',padding:'6px 12px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
                           <div style={{fontSize:11,fontWeight:700,flex:1,color:'#bbb'}}>{ex.name}</div>
                           <div style={{display:'flex',gap:4,flexWrap:'wrap',justifyContent:'flex-end'}}>
@@ -1534,6 +1611,12 @@ export default function App() {
           onClose={()=>{setShowProgSetup(false);setProgSetupEx(null)}}
         />
       )}
+      {toastMsg&&(
+        <div style={{position:'fixed',top:80,left:'50%',transform:'translateX(-50%)',background:'#111',border:'1px solid #4caf50',borderRadius:10,padding:'12px 20px',zIndex:300,boxShadow:'0 4px 20px rgba(0,0,0,0.6)',textAlign:'center',animation:'slideDown 0.4s ease',whiteSpace:'nowrap',fontSize:13,fontWeight:800,color:'#4caf50',letterSpacing:1}}>
+          {toastMsg}
+        </div>
+      )}
+      {confirmModal&&<ConfirmModal message={confirmModal.message} sub={confirmModal.sub} danger={confirmModal.danger} confirmLabel={confirmModal.confirmLabel} onConfirm={confirmModal.onConfirm} onCancel={hideConfirm}/>}
     </div>
   )
 }
