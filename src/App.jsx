@@ -500,14 +500,14 @@ function HelpModal({ onClose }) {
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.9)',zIndex:400,display:'flex',alignItems:'flex-end',justifyContent:'center'}} onClick={onClose}>
       <div onClick={e=>e.stopPropagation()} style={{background:'#111',border:'1px solid #2a2a2a',borderRadius:'16px 16px 0 0',padding:'24px 20px 36px',width:'100%',maxWidth:480,maxHeight:'88vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-          <div style={{fontSize:9,letterSpacing:5,color:'#ff8c00',fontWeight:900}}>⬡ IRON LOG</div>
+          <div style={{fontSize:9,letterSpacing:5,color:'#ff8c00',fontWeight:900}}>⬡ IRON LOG 3</div>
           <button onClick={onClose} style={{background:'transparent',border:'none',color:'#555',fontSize:18,cursor:'pointer',padding:'0 2px'}}>✕</button>
         </div>
         <div style={{fontSize:13,fontWeight:800,color:'#f0ece3',marginBottom:2}}>Guía rápida</div>
         <div style={{fontSize:11,color:'#666',marginBottom:4}}>Toca fuera para cerrar</div>
 
         <S>SESIÓN DIARIA</S>
-        <R icon="1️⃣" text="Selecciona Día A o Día B" sub="Alterna entre los dos días de entreno"/>
+        <R icon="1️⃣" text="Selecciona Día A, B o C" sub="Alterna entre los tres días de entreno"/>
         <R icon="▶" text="Pulsa INICIAR para arrancar el cronómetro" sub="La sesión no empieza hasta que lo actives"/>
         <R icon="▼" text="Expande un ejercicio" sub="Pon carga y reps con los botones +/−"/>
         <R icon="●" text="Barra lateral de color por serie" sub="Rojo = sin iniciar · Naranja = en curso · Verde = completada"/>
@@ -1125,7 +1125,7 @@ export default function App() {
       let parsedSess=null, loadedProgConfig={}
       const s=await storage.get('sess');if(s){parsedSess=JSON.parse(s.value);parsedSess={0:parsedSess[0]||[],1:parsedSess[1]||[],2:parsedSess[2]||[]};for(const d of[0,1,2])parsedSess[d]=parsedSess[d].map(attachSessionMetrics);setSessions(parsedSess);setAllTimeBests(calcAllTimeBests(parsedSess));}
       const c=await storage.get('curr')
-      if(c){const loadedCurr=JSON.parse(c.value);for(const d of[0,1,2]){const isEmpty=!loadedCurr[d]?.exercises?.some(ex=>ex.sets?.some(s=>s.load||s.reps||s.done));if(isEmpty&&parsedSess?.[d]?.length)loadedCurr[d]=sessionWithPrevLoads(d,parsedSess[d][0])};setCurrent({...{0:defaultSession(0),1:defaultSession(1),2:defaultSession(2)},...loadedCurr})}
+      if(c){const loadedCurr=JSON.parse(c.value);for(const d of[0,1,2]){const expected=EXERCISES[d];const stored=(loadedCurr[d]?.exercises||[]).map(ex=>ex.name);const mismatch=stored.length!==expected.length||expected.some((n,i)=>stored[i]!==n);if(mismatch){loadedCurr[d]=parsedSess?.[d]?.length?sessionWithPrevLoads(d,parsedSess[d][0]):defaultSession(d)}else{const isEmpty=!loadedCurr[d]?.exercises?.some(ex=>ex.sets?.some(s=>s.load||s.reps||s.done));if(isEmpty&&parsedSess?.[d]?.length)loadedCurr[d]=sessionWithPrevLoads(d,parsedSess[d][0])}};setCurrent({...{0:defaultSession(0),1:defaultSession(1),2:defaultSession(2)},...loadedCurr})}
       const m=await storage.get('meso');if(m)setMesocycle(JSON.parse(m.value))
       const ar=await storage.get('autorest');if(ar)setAutoRest(JSON.parse(ar.value))
       const rd=await storage.get('rest_duration');if(rd)setRestDuration(JSON.parse(rd.value))
@@ -1260,8 +1260,11 @@ export default function App() {
 
   if(!loaded) return (
     <div style={{background:'#080808',height:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16}}>
-      <div style={{fontSize:64,color:'#ff8c00'}}>⬡</div>
-      <div style={{fontSize:13,letterSpacing:4,color:'#666',fontWeight:800}}>IRON LOG · CARGANDO...</div>
+      <div style={{position:'relative',display:'inline-block',width:72,height:72}}>
+        <div style={{fontSize:72,color:'#ff8c00',lineHeight:1,position:'absolute',top:0,left:0}}>⬡</div>
+        <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-44%)',fontSize:24,fontWeight:900,color:'#ff8c00',lineHeight:1,fontFamily:"'Barlow Condensed','Arial Narrow',sans-serif"}}>3</div>
+      </div>
+      <div style={{fontSize:13,letterSpacing:4,color:'#666',fontWeight:800}}>IRON LOG 3 · CARGANDO...</div>
     </div>
   )
 
@@ -1289,7 +1292,7 @@ export default function App() {
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
           <div>
             <div style={{display:'flex',alignItems:'center',gap:7}}>
-              <div style={{fontSize:9,letterSpacing:5,color:'#ff8c00',fontWeight:800}}>⬡ IRON LOG</div>
+              <div style={{fontSize:9,letterSpacing:5,color:'#ff8c00',fontWeight:800}}>⬡ IRON LOG 3</div>
               <button onClick={()=>setShowHelp(true)} style={{width:18,height:18,borderRadius:'50%',background:'#1a1000',border:'1.5px solid #ff8c0066',color:'#ff8c00aa',fontSize:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:900,padding:0,fontFamily:'inherit',flexShrink:0}}>?</button>
             </div>
             <div style={{fontSize:11,color:'#777',letterSpacing:1,marginTop:1}}>{now.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'}).toUpperCase()}</div>
@@ -1505,7 +1508,7 @@ export default function App() {
             </>)
           })()}
           <div style={{marginTop:24,paddingTop:16,borderTop:'1px solid #222',textAlign:'center'}}>
-            <div style={{fontSize:13,color:'#ff8c00',fontWeight:800,letterSpacing:3}}>⬡ IRON LOG</div>
+            <div style={{fontSize:13,color:'#ff8c00',fontWeight:800,letterSpacing:3}}>⬡ IRON LOG 3</div>
             <div style={{fontSize:13,color:'#555',marginTop:6,fontWeight:700,letterSpacing:1}}>v{VERSION} · {BUILD_DATE}</div>
           </div>
         </div>

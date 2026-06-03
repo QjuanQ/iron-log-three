@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.png', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Iron Log',
-        short_name: 'Iron Log',
+        name: 'Iron Log 3',
+        short_name: 'Iron Log 3',
         description: 'Registro de entrenamiento de fuerza',
         theme_color: '#ff8c00',
         background_color: '#080808',
