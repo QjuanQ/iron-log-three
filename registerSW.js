@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/iron-log-three/sw.js', { scope: '/iron-log-three/' })})}
