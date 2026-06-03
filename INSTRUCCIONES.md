@@ -4,24 +4,19 @@
 Descarga e instala Node.js LTS desde: https://nodejs.org
 (Elige la versión LTS, botón verde grande)
 
-## Paso 2 — Configurar tu usuario de GitHub
-Abre el archivo `vite.config.js` y cambia esta línea:
-```
-const GITHUB_USER = 'TU_USUARIO'
-```
-Por tu nombre de usuario real de GitHub, por ejemplo:
-```
-const GITHUB_USER = 'juangarcia'
-```
+## Paso 2 — Configurar tu repositorio
+Este proyecto ya viene configurado para deploy con el nombre de repositorio `iron-log-three`.
+
+Si vas a usar otro repositorio, abre `vite.config.js` y actualiza `REPO_NAME` con el nombre de tu repositorio.
 
 ## Paso 3 — Crear el repositorio en GitHub
 1. Ve a github.com e inicia sesión
-2. Crea un repositorio nuevo llamado exactamente: `iron-log`
+2. Crea un repositorio nuevo llamado exactamente: `iron-log-three`
 3. Márcalo como **Public**
 4. NO inicialices con README
 
 ## Paso 4 — Abrir terminal en la carpeta del proyecto
-- **Windows**: clic derecho en la carpeta `iron-log` → "Abrir en Terminal"
+- **Windows**: clic derecho en la carpeta `iron-log-three` → "Abrir en Terminal"
 - **Mac**: clic derecho → "Nueva Terminal en carpeta"
 
 ## Paso 5 — Instalar dependencias
@@ -46,7 +41,7 @@ Este comando:
 
 Tu app estará en:
 ```
-https://TU_USUARIO.github.io/iron-log/
+https://TU_USUARIO.github.io/iron-log-three/
 ```
 (espera 1-2 minutos)
 
