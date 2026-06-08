@@ -22,6 +22,7 @@ const MUSCLE_MAP = {
   'Hack squat':{'Cuádriceps':1.0,'Glúteos':0.3},
   'Deadlift':{'Isquiotibiales':1.0,'Glúteos':0.8,'Dorsal':0.7,'Core':0.5,'Cuádriceps':0.5},
   'Extensión gemelos':{'Gemelos':1.0},
+  'Curl femoral':{'Isquiotibiales':1.0,'Glúteos':0.3},
 }
 const VOLUME_TARGETS = {
   'Pecho':{mev:10,mavL:12,mavH:20,mrv:22},'Dorsal':{mev:10,mavL:14,mavH:22,mrv:25},
@@ -59,6 +60,7 @@ const PROGRESSION_DEFAULTS = {
   'Tríceps dips':                    {setsTarget:4,repsMin:8, repsMax:12,loadIncrement:0,  rirTarget:2},
   'Hammer curls':                    {setsTarget:5,repsMin:10,repsMax:15,loadIncrement:2.5,rirTarget:2},
   'Extensión gemelos':               {setsTarget:5,repsMin:12,repsMax:20,loadIncrement:2.5,rirTarget:2},
+  'Curl femoral':                    {setsTarget:5,repsMin:10,repsMax:15,loadIncrement:2.5,rirTarget:2},
   'Crunches':                        {setsTarget:5,repsMin:15,repsMax:25,loadIncrement:0,  rirTarget:2},
 }
 const PROG_DEFAULT = {setsTarget:3,repsMin:8,repsMax:12,loadIncrement:2.5,rirTarget:2}

@@ -8,8 +8,8 @@
         {"name": "Elevaciones laterales pecho hacia delante", "alias": "Elevaciones laterales inclinado"},
         {"name": "Press banca horizontal", "alias": "Press de banca"},
         {"name": "Tracciones sobre barra fija para dorsales", "alias": "Tracción en barra dorsales"},
-        {"name": "Extensión de tríceps por encima de la cabeza", "alias": "Pushdown tríceps"},
         {"name": "Curl barra Z / curl inclinado con mancuernas", "alias": "Curl bíceps"},
+        {"name": "Gemelos con barra en hombros", "alias": "Extensión gemelos"},
         {"name": "Crunches abdominales", "alias": "Crunches"}
       ]
     },
@@ -18,8 +18,8 @@
       "exercises": [
         {"name": "Squats", "alias": "Squats"},
         {"name": "Hack squat / prensa", "alias": "Hack squat"},
-        {"name": "Gemelos con barra en hombros", "alias": "Extensión gemelos"},
         {"name": "Pushdown de tríceps / extensión de tríceps por encima de la cabeza", "alias": "Pushdown tríceps"},
+        {"name": "Curl femoral", "alias": "Curl femoral"},
         {"name": "Crunches reversas", "alias": "Crunches"}
       ]
     },
